@@ -1,6 +1,6 @@
 from dis import dis
 from tkinter import image_types
-from cv2 import getRotationMatrix2D, warpAffine
+from cv2 import getRotationMatrix2D, spatialGradient, warpAffine
 import numpy as np
 import cv2
 import matplotlib as plt
@@ -70,6 +70,7 @@ def resize(image, hor, ver, center=1, method="factor"):
 
 def pixel_swap(image, seed, swaps):
     '''
+    WARNING VERY SLOW
     randomly swaps pixels of an image to create noise. 
     image is the input image.
     seed is an integer that allows you to repreduce results. If called with the same seed twice, the output will be the same.
@@ -94,6 +95,28 @@ def pixel_swap(image, seed, swaps):
 
     return ret
 
+def saltpepper(image, seed, num=10):
+    '''
+    '''
+    ret = np.copy(image)
+
+    np.random.seed(seed)
+    print(num)
+    arr = np.random.randint(0,num, size=(720, 1280, 1)) # pixels that we want to change, indicated by 1
+    ret = np.where(arr == 0, 0, ret)
+    ret = np.where(arr == 1, 255, ret)
+    
+    
+    # np.random.seed(seed+1)
+    # arr2 = np.random.randint(0,2, size=(720, 1280, 1))
+    # rev = (arr1 + 1)%2 # opposite of arr
+    
+    # ret[:,:,0] *= rev # makes all the target pixels
+    # ret[:,:,1] *= rev
+    # ret[:,:,2] *= rev
+    
+    return ret
+
 def mosaic(image, seed, swaps):
     '''
     randomly swaps pixels of an image to create noise. 
@@ -104,19 +127,25 @@ def mosaic(image, seed, swaps):
     '''
     height, width, channels = image.shape
     ret = np.copy(image)
-    for num in range(0, swaps):
-        random.seed(seed + num)
-        a = random.randint(0, height - 1)
-        random.seed(seed + num + swaps)
-        b = random.randint(0, width - 1)
-        random.seed(seed + num + 2*swaps)
-        c = random.randint(0, height - 1)
-        random.seed(seed + num + 3*swaps)
-        d = random.randint(0, width - 1)
-        
-        x, y, z = ret[a,b]
-        ret[a,b] = ret[c,d]
-        ret[c,d] = [x,y,z]
+
+    for k in range(swaps):
+        random.seed(seed*k)
+        size = random.randint(50,200)
+        random.seed(seed*k + 100)
+        a = random.randint(0, HEIGHT - size - 1)
+        random.seed(seed*k + 200)
+        b = random.randint(0, WIDTH - size - 1)
+        random.seed(seed*k + 300)
+        c = random.randint(0, HEIGHT - size - 1)
+        random.seed(seed*k + 200)
+        d = random.randint(0, WIDTH - size - 1)
+        random.seed(seed*k + 300)
+        shade = random.randint(400, 700)
+        for i in range(size):
+            for j in range(size):
+                [x,y,z] = ret[a + i, b + j]
+                ret[a + i, b + j] = ret[c + i, d + j]
+                ret[c + i, d + j] = [x,y,z]
 
     return ret
 
@@ -283,26 +312,25 @@ def colour(image, bf=1, gf=1, rf=1, channel="RGB"):
     if (channel == "gray"):
         return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     else:
-        ret = image * 0.5
-        print(image)
-
-        
-
-
-        # for i in range(HEIGHT):
-        #     for j in range(WIDTH):
-        #         [x,y,z] = ret[i,j]
-        #         x1 = x * bf
-        #         y1 = y * gf
-        #         z1 = z * rf
-        #         if (x1 > 255):
-        #             x1 = 255
-        #         if (y1 > 255):
-        #             y1 = 255
-        #         if (z1 > 255):
-        #             z1 = 255
-
-        #         ret[i,j] = [x1, y1, z1]
+        ret = np.copy(image)
+        if (bf <= 1):
+            ret[:,:,0] = (ret[:,:,0]*bf).astype(int)
+        else:
+            blue = np.copy(image)
+            blue[:,:,0] = 255
+            ret[:,:,0] = ((ret[:,:,0] + 2*blue[:,:,0])/3).astype(int)
+        if (gf <= 1):
+            ret[:,:,1] = (ret[:,:,1]*gf).astype(int)
+        else: 
+            green = np.copy(image)
+            green[:,:,1] = 255
+            ret[:,:,1] = ((ret[:,:,1] + 2*green[:,:,1])/3).astype(int)
+        if (rf <= 1):
+            ret[:,:,2] = (ret[:,:,2]*rf).astype(int)
+        else:
+            red = np.copy(image)
+            red[:,:,2] = 255
+            ret[:,:,2] = ((ret[:,:,2] + 2*red[:,:,2])/3).astype(int)
         
         return ret
 
@@ -334,6 +362,15 @@ if __name__ == "__main__":
 
     display_image(image, window_name)
 
+    sp1 = saltpepper(image, 0)
+    display_image(sp1, window_name)
+
+    sp2 = saltpepper(image, 1)
+    display_image(sp2, window_name)
+
+    sp3 = saltpepper(image, 2)
+    display_image(sp3, window_name)
+
     # black = make_black()
     # display_image(black, window_name)
 
@@ -342,6 +379,9 @@ if __name__ == "__main__":
 
     # pixel = pixel_swap(image, 100, 100000)
     # display_image(pixel, window_name)
+
+    # ms1 = mosaic(image, 6, 10)
+    # display_image(ms1, window_name)
 
     # ref0 = reflect(image, 0)
     # display_image(ref0, window_name)
@@ -370,8 +410,8 @@ if __name__ == "__main__":
     # rot1 = rotate(image, 30)
     # display_image(rot1, window_name)
 
-    sh1 = shear(image, 0.4, 0.2)
-    display_image(sh1, window_name)
+    # sh1 = shear(image, 0.4, 0.2)
+    # display_image(sh1, window_name)
 
     # sh2 = shear(image, 0.7, 0.5)
     # display_image(sh2, window_name)
@@ -382,19 +422,19 @@ if __name__ == "__main__":
     # wv = wave(image, 50, 0.025, 45, 1)
     # display_image(wv, window_name)
 
-    # ms1 = mosaic(image, 0, 5, 5)
-    # display_image(ms1, window_name)
+    # ums1 = uniform_mosaic(image, 0, 5, 5)
+    # display_image(ums1, window_name)
 
-    # ms2 = mosaic(image, 1, 16, 128)
-    # display_image(ms2, window_name)
+    # ums2 = uniform_mosaic(image, 1, 16, 128)
+    # display_image(ums2, window_name)
 
-    # ms3 = mosaic(image, 0, 9, 10)
-    # display_image(ms3, window_name)
+    # ums3 = uniform_mosaic(image, 0, 9, 10)
+    # display_image(ums3, window_name)
 
     # gray = colour(image, channel="gray")
     # display_image(gray, window_name)
  
-    # blue = colour (image, 0,1,1)
+    # blue = colour (image, 0,1,0)
     # display_image(blue, window_name)
 
     # green = colour (image, 1, 0, 1)
@@ -403,8 +443,8 @@ if __name__ == "__main__":
     # red = colour (image, 1 , 1 , 0)
     # display_image(red, window_name)
 
-    allcl = colour(image)
-    display_image(allcl, window_name)
+    # boost_red = colour (image, 1, 1, 2)
+    # display_image(boost_red, window_name)
 
     # sdw1 = shadow(image, 10, 1)
     # display_image(sdw1, window_name)

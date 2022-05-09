@@ -9,7 +9,11 @@ from scipy.ndimage.filters import gaussian_filter
 
 # path 
 path = "/Users/andy/Documents/Data_Transformer/newdim.jpg"
+
+# output window name
 window_name = "Output Frame"
+
+# image dimensions
 HEIGHT = 720
 WIDTH = 1280
   
@@ -37,7 +41,7 @@ def display_image(image, window):
 
 def make_black():
     '''
-    Creates a black image of dimensions HEIGHT x WIDTH
+    Creates a black image of dimensions WIDTH x HEIGHT.
     '''
     return np.zeros(shape=[HEIGHT, WIDTH, 3], dtype=np.uint8)
 
@@ -47,11 +51,17 @@ def resize_image(image, hor_factor, ver_factor, centerized=1, scaling_method="fa
 
     INPUTS
     ------
-    image: Input image of dimensions HEIGHT x WIDTH
-    hor_factor: horizontal scaling factor to be multiplied to the WIDTH of the input - real number in [0,1]
-    ver_factor: vertical scaling factor to be multiplied to the HEIGHT of the input - real number in [0,1]
-    centerized: default makes the resized image overlayed onto the center of a black image. Otherwise the image is overlayed to the top-left-corner.
-    scaling_method: default makes hor_factor and ver_factor scaling factors. Otherwise, hor_factor and ver_factor are the bottom-right coordinates of the resized image
+    image: Input image of dimensions WIDTH x HEIGHT.
+    hor_factor: horizontal scaling factor to be multiplied to the WIDTH of the input.
+        float in [0,1]
+    ver_factor: vertical scaling factor to be multiplied to the HEIGHT of the input.
+        float in [0,1]
+    centerized: controls the position of the resulting image
+        default makes the resized image overlayed onto the center of a black image. 
+        otherwise, the image is overlayed to the top-left-corner.
+    scaling_method: controls how the image is resized 
+        default makes hor_factor and ver_factor scaling factors. 
+        otherwise, hor_factor and ver_factor are the bottom-right coordinates of the resized image.
     
     NOTES
     -----
@@ -76,23 +86,37 @@ def resize_image(image, hor_factor, ver_factor, centerized=1, scaling_method="fa
 
     return ret
 
-def reflect(image, axis):
+def reflect_image(image, axis):
     '''
-    reflects input image along an axis.
-    image is the input image of dimension 1280 x 720.
-    axis controls which axis the image is flipped along. 
-    axis can be: 0 (flip over y-axis), 1 (flip over x-axis), -1 (flip over both axes).
-    affects labels.
+    Reflects input image along given axis.
+    
+    INPUTS
+    ------
+    image: Input image of dimensions WIDTH x HEIGHT.
+    axis: determines which axis the image is flipped along. 
+        0: flip over y-axis
+        1: flip over x-axis
+        -1: flip over both axes
+    
+    NOTES
+    -----
+    Must be applied to labels as well.
     '''
     ret = np.copy(image)
     return cv2.flip(ret,axis)
  
-def rotate(image, deg):
+def rotate_image(image, deg):
     '''
-    rotates image by deg degrees, and resizes if necessary to preserve data from orignial image
-    image is the input image of dimension 1280 x 720.
-    deg is the rotation angle in degrees, between 180 and -180
-    affects labels.
+    Rotates image and resizes if necessary to preserve data from original image.
+    
+    INPUTS
+    ------
+    image: Input image of dimension WIDTH x HEIGHT.
+    deg: Rotation angle in degrees
+        must be between 180 and -180 degrees
+    
+    NOTES:
+    Must be applied to labels as well.
     '''
     
     val = abs(deg)
@@ -109,12 +133,23 @@ def rotate(image, deg):
     ret = np.copy(image)
     return cv2.warpAffine(ret, M, (int(cols),int(rows)))
 
-def shear(image, sh_x, sh_y):
+def shear_image(image, sh_x, sh_y):
     '''
-    image is the input image of dimension 1280 x 720.
-    sh_x and sh_y are the shearing factors in the x and y axis. 
-    Note: due to image dimensions, sh_y must be less than 0.5619 and sh_x must be less than 1.7763
-    affects labels.
+    Shears input image along x and y axes by specified amounts.
+
+    INPUTS
+    ------
+    image: Input image of dimension WIDTH x HEIGHT.
+    sh_x: shearing factor in x-axis.
+        must be less than ~ WIDTH / HEIGHT to stay within image frame
+        float in [0,WIDTH / HEIGHT)
+    sh_y: shearing factor in y-axis.
+        must be less than ~ HEIGHT / WIDTH to stay within image frame
+        float in [0,HEIGHT / WIDTH)
+    
+    NOTES
+    -----
+    Must be applied to labels as well.
     '''
     M = np.float32([[1, sh_x, 0],
                     [sh_y, 1, 0],
@@ -123,25 +158,56 @@ def shear(image, sh_x, sh_y):
     col = np.float32([[1280], [720], [1]])
     res = np.dot(inv,col)
 
-    size = resize_image(image, int(math.floor(res[0][0])), int(math.floor(res[1][0])), center=0,method="coordinates")
-    display_image(size, window_name)
-    rows, cols, dim = image.shape
-    sheared_img = cv2.warpPerspective(size,M,(int(cols),int(rows)))
+    new_size = resize_image(image, int(math.floor(res[0][0])), int(math.floor(res[1][0])), center=0, method="coordinates")
+    display_image(new_size, window_name)
+    sheared_img = cv2.warpPerspective(new_size,M,(int(HEIGHT),int(WIDTH)))
 
     return sheared_img
 
-def gaussian(image, kernel_x=10, kernel_y=10):
+def apply_gaussian(image, kernel_x=10, kernel_y=10):
     '''
-    returns gaussian blur of image.
-    image is the input image of dimension 1280 x 720.
-    kernel_x and kernel_y are positive integers that determine the blurring.
-    does not affect labels.
+    Applies a gaussian blur to the input image.
+    
+    INPUTS
+    ------
+    image: Input image of dimension WIDTH x HEIGHT.
+    kernel_x and kernel_y: Determine the blurring. 1 is added to both after they are multipled by 2 to ensure the input into the cv2.GaussianBlur function is odd
+        positive integers
+        default values for both are 10.
+    
+    NOTES
+    -----
+    Does not affect labels.
     '''
     ret = np.copy(image)
     return cv2.GaussianBlur(ret, (2*kernel_x + 1, 2*kernel_y + 1), 0)
 
-def colour(image, bf=1, gf=1, rf=1, channel="RGB"):
-    if (channel == "gray"):
+def colour(image, bf=1, gf=1, rf=1, mode="RGB"):
+    '''
+    Modifies colour channels of input image.
+
+    INPUTS
+    ------
+    image: Input image of dimensions WIDTH x HEIGHT.
+    bf: blue-factor to be multiplied to the blue channel of the image.
+        bf = 0 will remove all blue from the image
+        if bf increases the blue beyond 255, it gets capped at 255
+    gf: green-factor to be multiplied to the green channel of the image.
+        gf = 0 will remove all green from the image
+        if gf increases the green beyond 255, it gets capped at 255  
+    rf: red-factor to be multiplied to the red channel of the image.
+        rf = 0 will remove all red from the image
+        if rf increases the red beyond 255, it gets capped at 255  
+    mode: indicates if you want to modify the RGB channels of your image.
+        default modifies RGB channels
+        otherwise, applies grayscale to the image
+
+    NOTES
+    -----
+    Does not affect labels.
+
+    '''
+    if (mode != "RGB"):
         return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     else:
         ret = np.copy(image)
@@ -168,12 +234,20 @@ def colour(image, bf=1, gf=1, rf=1, channel="RGB"):
 
 def pixel_swap(image, seed, swaps):
     '''
+    Randomly swaps pixels of an image to create noise.
+
+    INPUTS
+    ------
+    image: Input image of dimensions WIDTH x HEIGHT.
+    seed: Allows you to repreduce results. If called with the same seed twice, the output will be the same.
+        any integer
+    swaps: determines the number of times pixels are swapped.
+        any integer
+    
+    NOTES
+    -----
     WARNING VERY SLOW
-    randomly swaps pixels of an image to create noise. 
-    image is the input image.
-    seed is an integer that allows you to repreduce results. If called with the same seed twice, the output will be the same.
-    swaps is a non-negative integer that determines the number of times pixels are swapped.
-    does not affect labels.
+    Must be applied to labels as well.
     '''
     height, width, channels = image.shape
     ret = np.copy(image)
@@ -195,74 +269,97 @@ def pixel_swap(image, seed, swaps):
 
 def apply_mosaic(image, seed, swaps):
     '''
-    randomly swaps pixels of an image to create noise. 
-    image is the input image.
-    seed is an integer that allows you to repreduce results. If called with the same seed twice, the output will be the same.
-    swaps is a non-negative integer that determines the number of times pixels are swapped.
-    does not affect labels.
+    Randomly swaps sections of an image. Sections are rectangles of random dimensions
+    
+    INPUTS
+    ------
+    image: Input image of dimensions WIDTH x HEIGHT.
+    seed: Allows you to repreduce results. If called with the same seed twice, the output will be the same.
+        any integer
+    swaps: determines the number of times pixels are swapped.
+        any integer
+
+    NOTES
+    -----
+    Must be applied to labels as well.
     '''
     height, width, channels = image.shape
     ret = np.copy(image)
+    cpy = np.copy(image)
 
     for k in range(swaps):
         random.seed(seed*k)
-        size = random.randint(50,200)
+        box_height = random.randint(50,200)
+        random.seed(seed*k + 50)
+        box_width = random.randint(50,200)
         random.seed(seed*k + 100)
-        a = random.randint(0, HEIGHT - size - 1)
+        a = random.randint(0, HEIGHT - box_height - 1)
         random.seed(seed*k + 200)
-        b = random.randint(0, WIDTH - size - 1)
+        b = random.randint(0, WIDTH - box_width - 1)
         random.seed(seed*k + 300)
-        c = random.randint(0, HEIGHT - size - 1)
+        c = random.randint(0, HEIGHT - box_height - 1)
         random.seed(seed*k + 200)
-        d = random.randint(0, WIDTH - size - 1)
+        d = random.randint(0, WIDTH - box_width - 1)
         random.seed(seed*k + 300)
-        shade = random.randint(400, 700)
-        for i in range(size):
-            for j in range(size):
-                [x,y,z] = ret[a + i, b + j]
-                ret[a + i, b + j] = ret[c + i, d + j]
-                ret[c + i, d + j] = [x,y,z]
+        
+        cpy[a:(a + box_height), b:(b + box_width)] = ret[a:(a + box_height), b:(b + box_width)]
+        ret[a:(a + box_height), b:(b + box_width)] = ret[c:(c + box_height), d:(d + box_width)]
+        ret[c:(c + box_height), d:(d + box_width)] = cpy[a:(a + box_height), b:(b + box_width)]
 
     return ret
 
-def uniform_mosaic(image, seed, x_box, y_box):
+def uniform_mosaic(image, seed, v_box, h_box):
     '''
-    randomly swaps pixels of an image to create noise. 
-    image is the input image.
-    seed is an integer that allows you to repreduce results. If called with the same seed twice, the output will be the same.
-    Note: x_box and y_box should divide the dimensions of the input image for easy of swapping
-    x_box is the number of boxes vertically. for 720: 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 
-    30, 36, 40, 45, 48, 60, 72, 80, 90, 120, 144, 180, 240, 360, 720
-    y_box is the number of boxes horizontally: for 1280: 1, 2, 4, 5, 8, 10, 16, 20, 32, 40, 64, 80, 128, 160, 256, 320, 640, 1280
-    does not affect labels.
+    Splits image into a grid of x_box by y_box equal rectangles. Randomly swaps rectangles.
+    
+    INPUTS
+    ------
+    image: Input image of dimensions WIDTH x HEIGHT.
+    seed: Allows you to repreduce results. If called with the same seed twice, the output will be the same.
+        any integer
+    v_box: determines the number of boxes along the vertical axis.
+        any positive integer less than 721
+    h_box: determines the number of boxes along the horizontal axis.
+        any positive integer less than 1281
+
+    NOTES
+    -----
+    Must be applied to labels as well.
     '''
-    arr = np.arange(1, x_box * y_box + 1, dtype=int) # middle index is not swapped if odd
+    arr = np.arange(1, v_box * h_box + 1, dtype=int) # middle index is not swapped if odd
     np.random.seed(seed)
     np.random.shuffle(arr)
 
-    rows = int(HEIGHT/x_box)
-    cols = int(WIDTH/y_box)
+    rows = int(HEIGHT/v_box)
+    cols = int(WIDTH/h_box)
 
     height, width, channels = image.shape
     ret = np.copy(image)
-    for num in range(int((x_box*y_box)/2)):
-        c1 = ((arr[2*num] - 1) % y_box) * cols
-        r1 = int((arr[2*num]-1)/y_box) * rows
-        c2 = ((arr[2*num + 1] - 1) % y_box) * cols
-        r2 = int((arr[2*num + 1]-1)/y_box) * rows
-        for i in range(rows):
-            for j in range(cols):
-                x, y, z = ret[r1 + i, c1 + j]
-                ret[r1 + i, c1 + j] = ret[r2 + i, c2 + j]
-                ret[r2 + i, c2 + j] = [x,y,z]
+    cpy = np.copy(image)
+
+    for num in range(int((v_box*h_box)/2)):
+        c1 = ((arr[2*num] - 1) % h_box) * cols
+        r1 = int((arr[2*num]-1)/h_box) * rows
+        c2 = ((arr[2*num + 1] - 1) % h_box) * cols
+        r2 = int((arr[2*num + 1]-1)/h_box) * rows
+        
+        cpy[r1:(r1 + rows), c1:(c1 + cols)] = ret[r1:(r1 + rows), c1:(c1 + cols)]
+        ret[r1:(r1 + rows), c1:(c1 + cols)] = ret[r2:(r2 + rows), c2:(c2 + cols)]
+        ret[r2:(r2 + rows), c2:(c2 + cols)] = cpy[r1:(r1 + rows), c1:(c1 + cols)]
 
     return ret
 
 def apply_saltpepper(image, seed, density=10):
     '''
-    image is the input image
-    seed allows you to reproduce results
-    density controls the amount of black and white pixels added. A greater density lowers the probability that black and white pixels are generated
+    Randomly turns pixels white, black, or gray to add noise.
+
+    INPUTS
+    ------
+    image: Input image of dimensions of WIDTH x HEIGHT
+    seed: Allows you to repreduce results. If called with the same seed twice, the output will be the same.
+        any integer
+    density: Controls the amount of black and white pixels added. A greater density lowers the probability that pixels are altered.
+        any integer greater than 2
     '''
     ret = np.copy(image)
 
@@ -270,15 +367,9 @@ def apply_saltpepper(image, seed, density=10):
     arr = np.random.randint(0,density, size=(720, 1280, 1)) # pixels that we want to change, indicated by 1
     ret = np.where(arr == 0, 0, ret)
     ret = np.where(arr == 1, 255, ret)
-    
-    
-    # np.random.seed(seed+1)
-    # arr2 = np.random.randint(0,2, size=(720, 1280, 1))
-    # rev = (arr1 + 1)%2 # opposite of arr
-    
-    # ret[:,:,0] *= rev # makes all the target pixels
-    # ret[:,:,1] *= rev
-    # ret[:,:,2] *= rev
+    random.seed(seed+100)
+    val = random.randint(1, 255)
+    ret = np.where(arr == 2, val, ret)
     
     return ret
 
@@ -349,7 +440,7 @@ def raindrop(image, seed, num=40, kernel_x=100, kernel_y=100):
     overlay gaussian blur onto groups of pixels?
     shade groups of pixels?
     '''
-    blur = gaussian(image, kernel_x, kernel_y)
+    blur = apply_gaussian(image, kernel_x, kernel_y)
     
     for k in range(num):
         random.seed(seed*k)
@@ -375,8 +466,8 @@ if __name__ == "__main__":
     # black = make_black()
     # display_image(black, window_name)
 
-    resized = resize_image(image, 0.5, 0.25)
-    display_image(resized, window_name)
+    # resized = resize_image(image, 0.5, 0.25)
+    # display_image(resized, window_name)
 
     # sp1 = apply_saltpepper(image, 0)
     # display_image(sp1, window_name)
@@ -387,12 +478,10 @@ if __name__ == "__main__":
     # sp3 = apply_saltpepper(image, 2)
     # display_image(sp3, window_name)
 
-    
-
     # pixel = pixel_swap(image, 100, 100000)
     # display_image(pixel, window_name)
 
-    # ms1 = apply_mosaic(image, 6, 10)
+    # ms1 = apply_mosaic(image, 10, 1000)
     # display_image(ms1, window_name)
 
     # ref0 = reflect(image, 0)
@@ -434,11 +523,14 @@ if __name__ == "__main__":
     # wv = wave(image, 50, 0.025, 45, 1)
     # display_image(wv, window_name)
 
-    # ums1 = uniform_mosaic(image, 0, 5, 5)
-    # display_image(ums1, window_name)
+    ums1 = uniform_mosaic(image, 0, 5, 10)
+    display_image(ums1, window_name)
 
     # ums2 = uniform_mosaic(image, 1, 16, 128)
     # display_image(ums2, window_name)
+
+    # ums3 = uniform_mosaic(image, 1, 720, 1280)
+    # display_image(ums3, window_name)
 
     # ums3 = uniform_mosaic(image, 0, 9, 10)
     # display_image(ums3, window_name)

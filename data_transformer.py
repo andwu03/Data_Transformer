@@ -373,49 +373,48 @@ def apply_saltpepper(image, seed, density=10):
     
     return ret
 
-def wave(image, amplitude, stretch, shift, dir):
+def wave(image, amplitude=100, shift=0, stretch=0.02, axis=1):
     '''
-    creates a wave-like effect on image, based on a sinusoidal curve.
-    dir is 0 for horizontal effect and 1 for vertical effect.
-    amplitude is the amplitude of the sinusoidal curve.
-    stretch is a value between 0 and 1 that stretches the sinusoid longer.
-    shift is the translation of the curve.
-    affects labels.
+    Creates a wave-like effect on image, based on a sinusoidal curve.
+
+    INPUTS
+    ------
+    axis: Determines which axis the wave occurs on.
+        default is 1, which is the vertical axis
+        0 is for the horizontal axis
+    amplitude: Amplitude of the sinusoidal curve. 
+        Remember that the dimensions of the image are WIDTH x HEIGHT, so amplitude should be much smaller than the corresponding dimension for optimal results
+        any float
+        default is 100 pixels
+    shift: Hotizontal translation of the curve.
+        any float
+        default is 0
+    stretch: Stretches the sinusoid along the horizontal axis.
+        The larger the stretch, the lower the period of the sinusoid, which can reduce the quality of the results and make it unrecognizable.
+        any float
+        default is 0.02
+    
+    NOTES
+    -----
+    Must be applied to labels as well.
     '''
-    if (dir is 0):
+    ret = make_black()
+    if (axis is 0):
         factor = (WIDTH - 2*amplitude)/WIDTH
-        ret = resize_image(image, factor, factor)
+        rsz = resize_image(image, factor, factor)
 
-        for j in range (0, HEIGHT):
-            for i in range (0, WIDTH):
-                try:
-                    num = round(amplitude*math.sin(stretch*(j + math.radians(shift))))
-                    if (num < 0):
-                        ret[j,i] = ret[j, i - num]
-                    else:
-                        if (WIDTH - i - num < 0):
-                            ret[j,WIDTH - i] = [0,0,0]
-                        else:
-                            ret[j,WIDTH - i] = ret[j, WIDTH - i - num]
-                except:
-                    ret[j,i] = [0,0,0]
-    elif (dir is 1):
+        for i in range(0, HEIGHT):
+            num = round(amplitude*math.sin(stretch*(i + math.radians(shift))))
+
+            ret[i, amplitude + num:(WIDTH - amplitude + num)] = rsz[i, amplitude:(WIDTH - amplitude)]
+    elif (axis is 1):
         factor = (HEIGHT - 2*amplitude)/HEIGHT
-        ret = resize_image(image, factor, factor)
+        rsz = resize_image(image, factor, factor)
 
-        for j in range (0, WIDTH):
-            for i in range (0, HEIGHT):
-                try:
-                    num = round(amplitude*math.sin(stretch*(j + math.radians(shift))))
-                    if (num < 0):
-                        ret[i,j] = ret[i - num, j]
-                    else:
-                        if (HEIGHT - i - num < 0):
-                            ret[HEIGHT - i,j] = [0,0,0]
-                        else:
-                            ret[HEIGHT - i,j] = ret[HEIGHT - i - num, j]
-                except:
-                    ret[i,j] = [0,0,0]
+        for i in range(0, WIDTH):
+            num = round(amplitude*math.sin(stretch*(i + math.radians(shift))))
+
+            ret[amplitude + num:(HEIGHT - amplitude + num), i] = rsz[amplitude:(HEIGHT - amplitude), i]
     
     return ret
 
@@ -517,14 +516,11 @@ if __name__ == "__main__":
     # sh2 = shear(image, 0.7, 0.5)
     # display_image(sh2, window_name)
 
-    # wv = wave(image, 25, 0.025, 60, 0)
+    # wv = wave(image)
     # display_image(wv, window_name)
 
-    # wv = wave(image, 50, 0.025, 45, 1)
-    # display_image(wv, window_name)
-
-    ums1 = uniform_mosaic(image, 0, 5, 10)
-    display_image(ums1, window_name)
+    # ums1 = uniform_mosaic(image, 0, 5, 10)
+    # display_image(ums1, window_name)
 
     # ums2 = uniform_mosaic(image, 1, 16, 128)
     # display_image(ums2, window_name)

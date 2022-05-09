@@ -1,12 +1,11 @@
-from dis import dis
-from tkinter import image_types
 from cv2 import getRotationMatrix2D, spatialGradient, warpAffine
 import numpy as np
 import cv2
-import matplotlib as plt
 import math
 from PIL import Image
 import random
+from scipy.ndimage.interpolation import map_coordinates
+from scipy.ndimage.filters import gaussian_filter
 
 # path 
 path = "/Users/andy/Documents/Data_Transformer/newdim.jpg"
@@ -16,57 +15,156 @@ WIDTH = 1280
   
 def initialize(path):
     '''
-    opens an image from specified file path. Note image[x,y] --> x is row, y is col
+    Opens an image from specified file path. 
+    
+    NOTES
+    ----
+    image[x,y] --> x is row, y is col.
     '''
     return cv2.imread(path)
 
-def make_black():
-    '''
-    creates a black image of dimensions 1280 x 720.
-    '''
-    image = np.zeros(shape=[HEIGHT, WIDTH, 3], dtype=np.uint8)
-    return image
-
 def display_image(image, window):
     '''
-    prints input image to window.
-    image is the input image.
-    window is the name of the output window
+    Prints input image to window and adds a waitkey.
+
+    INPUTS
+    ------
+    Image: Input image. Make sure it has dimensions of HEIGHT and WIDTH.
+    Window: Name of the output window.
     '''
     cv2.imshow(window, image) 
     cv2.waitKey(0)
 
-def resize(image, hor, ver, center=1, method="factor"):
+def make_black():
     '''
-    resized an image and overlays onto a black image.
-    image is the input image of dimension 1280 x 720.
-    hor and ver are values between 0 and 1.
-    they are the factors multiplied to the dimensions of the input image.
-    center default makes the resized image overlayed onto the center, otherwise on the top-corner.
-    method default makes hor and ver scaling factors, otherwise makes hor and ver the bottom-right coordinates of the resized image
-    affects labels.
+    Creates a black image of dimensions HEIGHT x WIDTH
     '''
-    if (method == "factor"):
-        x = round(WIDTH * hor)
-        y = round(HEIGHT * ver)
+    return np.zeros(shape=[HEIGHT, WIDTH, 3], dtype=np.uint8)
+
+def resize_image(image, hor_factor, ver_factor, centerized=1, scaling_method="factor"):
+    '''
+    Resizes an image and overlays it onto a black image.
+
+    INPUTS
+    ------
+    image: Input image of dimensions HEIGHT x WIDTH
+    hor_factor: horizontal scaling factor to be multiplied to the WIDTH of the input - real number in [0,1]
+    ver_factor: vertical scaling factor to be multiplied to the HEIGHT of the input - real number in [0,1]
+    centerized: default makes the resized image overlayed onto the center of a black image. Otherwise the image is overlayed to the top-left-corner.
+    scaling_method: default makes hor_factor and ver_factor scaling factors. Otherwise, hor_factor and ver_factor are the bottom-right coordinates of the resized image
+    
+    NOTES
+    -----
+    Must be appied to labels as well.
+    '''
+    if (scaling_method == "factor"):
+        x = round(WIDTH * hor_factor)
+        y = round(HEIGHT * ver_factor)
     else: 
-        x = hor
-        y = ver
+        x = hor_factor
+        y = ver_factor
     new_dim = (x,y)
     cpy = np.copy(image)
     resized = cv2.resize(cpy, new_dim, interpolation=cv2.INTER_LINEAR)
     ret = make_black()
+    rh, rw, channels = resized.shape
 
-    if (center == 1):
-        for a in range(0, x):
-            for b in range(0, y):
-                ret[b + round((HEIGHT - y)/2),a + round((WIDTH - x)/2)] = resized[b,a]
+    if (centerized == 1):
+        ret[round((HEIGHT - y)/2):(round((HEIGHT - y)/2) + rh),round((WIDTH - x)/2):(round((WIDTH - x)/2) + rw)] = resized
     else:
-        for a in range(0, x):
-            for b in range(0, y):
-                ret[b,a] = resized[b,a]
+        ret[0:rh,0:rw] = resized
 
-    return ret 
+    return ret
+
+def reflect(image, axis):
+    '''
+    reflects input image along an axis.
+    image is the input image of dimension 1280 x 720.
+    axis controls which axis the image is flipped along. 
+    axis can be: 0 (flip over y-axis), 1 (flip over x-axis), -1 (flip over both axes).
+    affects labels.
+    '''
+    ret = np.copy(image)
+    return cv2.flip(ret,axis)
+ 
+def rotate(image, deg):
+    '''
+    rotates image by deg degrees, and resizes if necessary to preserve data from orignial image
+    image is the input image of dimension 1280 x 720.
+    deg is the rotation angle in degrees, between 180 and -180
+    affects labels.
+    '''
+    
+    val = abs(deg)
+    if (val > 90):
+        val = 180 - val
+
+    hypo = math.sqrt(math.pow(HEIGHT/2, 2) + math.pow(WIDTH/2, 2))
+    init_angle = math.atan(HEIGHT/WIDTH)
+    factor = HEIGHT/(2*hypo*math.sin(init_angle + math.radians(val)))
+    image = resize_image(image, factor, factor)
+    
+    rows, cols, dim = image.shape
+    M = getRotationMatrix2D(center = (round(cols/2), round(rows/2)), angle=deg, scale=1)
+    ret = np.copy(image)
+    return cv2.warpAffine(ret, M, (int(cols),int(rows)))
+
+def shear(image, sh_x, sh_y):
+    '''
+    image is the input image of dimension 1280 x 720.
+    sh_x and sh_y are the shearing factors in the x and y axis. 
+    Note: due to image dimensions, sh_y must be less than 0.5619 and sh_x must be less than 1.7763
+    affects labels.
+    '''
+    M = np.float32([[1, sh_x, 0],
+                    [sh_y, 1, 0],
+                    [0, 0, 1]])
+    inv = np.linalg.inv(M)
+    col = np.float32([[1280], [720], [1]])
+    res = np.dot(inv,col)
+
+    size = resize_image(image, int(math.floor(res[0][0])), int(math.floor(res[1][0])), center=0,method="coordinates")
+    display_image(size, window_name)
+    rows, cols, dim = image.shape
+    sheared_img = cv2.warpPerspective(size,M,(int(cols),int(rows)))
+
+    return sheared_img
+
+def gaussian(image, kernel_x=10, kernel_y=10):
+    '''
+    returns gaussian blur of image.
+    image is the input image of dimension 1280 x 720.
+    kernel_x and kernel_y are positive integers that determine the blurring.
+    does not affect labels.
+    '''
+    ret = np.copy(image)
+    return cv2.GaussianBlur(ret, (2*kernel_x + 1, 2*kernel_y + 1), 0)
+
+def colour(image, bf=1, gf=1, rf=1, channel="RGB"):
+    if (channel == "gray"):
+        return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        ret = np.copy(image)
+        if (bf <= 1):
+            ret[:,:,0] = (ret[:,:,0]*bf).astype(int)
+        else:
+            blue = np.copy(image)
+            blue[:,:,0] = 255
+            ret[:,:,0] = ((ret[:,:,0] + 2*blue[:,:,0])/3).astype(int)
+        if (gf <= 1):
+            ret[:,:,1] = (ret[:,:,1]*gf).astype(int)
+        else: 
+            green = np.copy(image)
+            green[:,:,1] = 255
+            ret[:,:,1] = ((ret[:,:,1] + 2*green[:,:,1])/3).astype(int)
+        if (rf <= 1):
+            ret[:,:,2] = (ret[:,:,2]*rf).astype(int)
+        else:
+            red = np.copy(image)
+            red[:,:,2] = 255
+            ret[:,:,2] = ((ret[:,:,2] + 2*red[:,:,2])/3).astype(int)
+        
+        return ret
 
 def pixel_swap(image, seed, swaps):
     '''
@@ -95,29 +193,7 @@ def pixel_swap(image, seed, swaps):
 
     return ret
 
-def saltpepper(image, seed, num=10):
-    '''
-    '''
-    ret = np.copy(image)
-
-    np.random.seed(seed)
-    print(num)
-    arr = np.random.randint(0,num, size=(720, 1280, 1)) # pixels that we want to change, indicated by 1
-    ret = np.where(arr == 0, 0, ret)
-    ret = np.where(arr == 1, 255, ret)
-    
-    
-    # np.random.seed(seed+1)
-    # arr2 = np.random.randint(0,2, size=(720, 1280, 1))
-    # rev = (arr1 + 1)%2 # opposite of arr
-    
-    # ret[:,:,0] *= rev # makes all the target pixels
-    # ret[:,:,1] *= rev
-    # ret[:,:,2] *= rev
-    
-    return ret
-
-def mosaic(image, seed, swaps):
+def apply_mosaic(image, seed, swaps):
     '''
     randomly swaps pixels of an image to create noise. 
     image is the input image.
@@ -182,69 +258,29 @@ def uniform_mosaic(image, seed, x_box, y_box):
 
     return ret
 
-def reflect(image, num):
+def apply_saltpepper(image, seed, density=10):
     '''
-    reflects input image along an axis.
-    image is the input image of dimension 1280 x 720.
-    num controls which axis the image is flipped along. 
-    num can be: 0 (flip over y-axis), 1 (flip over x-axis), -1 (flip over both axes).
-    affects labels.
+    image is the input image
+    seed allows you to reproduce results
+    density controls the amount of black and white pixels added. A greater density lowers the probability that black and white pixels are generated
     '''
     ret = np.copy(image)
-    return cv2.flip(ret,num)
 
-def gaussian(image, kernel_x=10, kernel_y=10):
-    '''
-    returns gaussian blur of image.
-    image is the input image of dimension 1280 x 720.
-    kernel_x and kernel_y are positive integers that determine the blurring.
-    does not affect labels.
-    '''
-    ret = np.copy(image)
-    return cv2.GaussianBlur(ret, (2*kernel_x + 1, 2*kernel_y + 1), 0)
- 
-def rotate(image, deg):
-    '''
-    rotates image by deg degrees, and resizes if necessary to preserve data from orignial image
-    image is the input image of dimension 1280 x 720.
-    deg is the rotation angle in degrees, between 180 and -180
-    affects labels.
-    '''
+    np.random.seed(seed)
+    arr = np.random.randint(0,density, size=(720, 1280, 1)) # pixels that we want to change, indicated by 1
+    ret = np.where(arr == 0, 0, ret)
+    ret = np.where(arr == 1, 255, ret)
     
-    val = abs(deg)
-    if (val > 90):
-        val = 180 - val
-
-    hypo = math.sqrt(math.pow(HEIGHT/2, 2) + math.pow(WIDTH/2, 2))
-    init_angle = math.atan(HEIGHT/WIDTH)
-    factor = HEIGHT/(2*hypo*math.sin(init_angle + math.radians(val)))
-    image = resize(image, factor, factor)
     
-    rows, cols, dim = image.shape
-    M = getRotationMatrix2D(center = (round(cols/2), round(rows/2)), angle=deg, scale=1)
-    ret = np.copy(image)
-    return cv2.warpAffine(ret, M, (int(cols),int(rows)))
-
-def shear(image, sh_x, sh_y):
-    '''
-    image is the input image of dimension 1280 x 720.
-    sh_x and sh_y are the shearing factors in the x and y axis. 
-    Note: due to image dimensions, sh_y must be less than 0.5619 and sh_x must be less than 1.7763
-    affects labels.
-    '''
-    M = np.float32([[1, sh_x, 0],
-                    [sh_y, 1, 0],
-                    [0, 0, 1]])
-    inv = np.linalg.inv(M)
-    col = np.float32([[1280], [720], [1]])
-    res = np.dot(inv,col)
-
-    size = resize(image, int(math.floor(res[0][0])), int(math.floor(res[1][0])), center=0,method="coordinates")
-    display_image(size, window_name)
-    rows, cols, dim = image.shape
-    sheared_img = cv2.warpPerspective(size,M,(int(cols),int(rows)))
-
-    return sheared_img
+    # np.random.seed(seed+1)
+    # arr2 = np.random.randint(0,2, size=(720, 1280, 1))
+    # rev = (arr1 + 1)%2 # opposite of arr
+    
+    # ret[:,:,0] *= rev # makes all the target pixels
+    # ret[:,:,1] *= rev
+    # ret[:,:,2] *= rev
+    
+    return ret
 
 def wave(image, amplitude, stretch, shift, dir):
     '''
@@ -257,7 +293,7 @@ def wave(image, amplitude, stretch, shift, dir):
     '''
     if (dir is 0):
         factor = (WIDTH - 2*amplitude)/WIDTH
-        ret = resize(image, factor, factor)
+        ret = resize_image(image, factor, factor)
 
         for j in range (0, HEIGHT):
             for i in range (0, WIDTH):
@@ -274,7 +310,7 @@ def wave(image, amplitude, stretch, shift, dir):
                     ret[j,i] = [0,0,0]
     elif (dir is 1):
         factor = (HEIGHT - 2*amplitude)/HEIGHT
-        ret = resize(image, factor, factor)
+        ret = resize_image(image, factor, factor)
 
         for j in range (0, WIDTH):
             for i in range (0, HEIGHT):
@@ -308,32 +344,6 @@ def shadow(image, num, seed):
 
     return image
 
-def colour(image, bf=1, gf=1, rf=1, channel="RGB"):
-    if (channel == "gray"):
-        return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    else:
-        ret = np.copy(image)
-        if (bf <= 1):
-            ret[:,:,0] = (ret[:,:,0]*bf).astype(int)
-        else:
-            blue = np.copy(image)
-            blue[:,:,0] = 255
-            ret[:,:,0] = ((ret[:,:,0] + 2*blue[:,:,0])/3).astype(int)
-        if (gf <= 1):
-            ret[:,:,1] = (ret[:,:,1]*gf).astype(int)
-        else: 
-            green = np.copy(image)
-            green[:,:,1] = 255
-            ret[:,:,1] = ((ret[:,:,1] + 2*green[:,:,1])/3).astype(int)
-        if (rf <= 1):
-            ret[:,:,2] = (ret[:,:,2]*rf).astype(int)
-        else:
-            red = np.copy(image)
-            red[:,:,2] = 255
-            ret[:,:,2] = ((ret[:,:,2] + 2*red[:,:,2])/3).astype(int)
-        
-        return ret
-
 def raindrop(image, seed, num=40, kernel_x=100, kernel_y=100):
     '''
     overlay gaussian blur onto groups of pixels?
@@ -362,25 +372,27 @@ if __name__ == "__main__":
 
     display_image(image, window_name)
 
-    sp1 = saltpepper(image, 0)
-    display_image(sp1, window_name)
-
-    sp2 = saltpepper(image, 1)
-    display_image(sp2, window_name)
-
-    sp3 = saltpepper(image, 2)
-    display_image(sp3, window_name)
-
     # black = make_black()
     # display_image(black, window_name)
 
-    # resized = resize(image, 0.5, 0.25)
-    # display_image(resized, window_name)
+    resized = resize_image(image, 0.5, 0.25)
+    display_image(resized, window_name)
+
+    # sp1 = apply_saltpepper(image, 0)
+    # display_image(sp1, window_name)
+
+    # sp2 = apply_saltpepper(image, 1)
+    # display_image(sp2, window_name)
+
+    # sp3 = apply_saltpepper(image, 2)
+    # display_image(sp3, window_name)
+
+    
 
     # pixel = pixel_swap(image, 100, 100000)
     # display_image(pixel, window_name)
 
-    # ms1 = mosaic(image, 6, 10)
+    # ms1 = apply_mosaic(image, 6, 10)
     # display_image(ms1, window_name)
 
     # ref0 = reflect(image, 0)

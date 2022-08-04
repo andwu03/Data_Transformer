@@ -4,6 +4,7 @@ from data_transformer import *
 
 # path, make sure images are in the same folder as
 FILE_DIRECTORY = os.path.dirname(__file__)
+FILE_DIRECTORY = os.path.join(FILE_DIRECTORY, "images")
 DEFAULT_IMAGE_PATH = os.path.join(FILE_DIRECTORY, "newdim.jpg")
 SHADOW_1_PATH = os.path.join(FILE_DIRECTORY, "shadow.png")
 SHADOW_2_PATH = os.path.join(FILE_DIRECTORY, "shadow2.jpeg")
